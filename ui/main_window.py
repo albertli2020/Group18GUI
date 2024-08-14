@@ -1,47 +1,50 @@
-from PyQt6.QtWidgets import QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QLabel, QFileDialog
-from PyQt6.QtCore import Qt
-from modules.file_loading import load_and_stitch_tiffs
+from PyQt6.QtWidgets import QMainWindow, QLabel, QPushButton, QFileDialog, QVBoxLayout, QWidget
+from PyQt6.QtGui import QPixmap, QPainter, QPen
+from PyQt6.QtCore import Qt, QRect
+from modules.file_loading import load_and_stitch_tiffs, get_grid_size
+from modules.mouse_tracking import FileNameWidget, MouseTrackingLabel  # Import the grid size function
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("TIFF Analysis Application")
-        self.setGeometry(100, 100, 800, 600)
+        self.setWindowTitle("Tiff Viewer")
+        self.setGeometry(100, 100, 1600, 1200)
 
-        # Central Widget and Layout
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
-
-        # Main Layout (Vertical)
-        self.main_layout = QVBoxLayout(self.central_widget)
-
-        # Status Label (for displaying "Stitching")
-        self.status_label = QLabel("")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.main_layout.addWidget(self.status_label)
-
-        # Image Display Area (Placeholder)
-        self.image_label = QLabel("Stitched Image Display Area")
+        # Initialize the custom QLabel to display the image and track mouse
+        self.image_label = MouseTrackingLabel(self)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setStyleSheet("border: 1px solid black;")
-        self.main_layout.addWidget(self.image_label)
 
-        # Button Layout (Horizontal)
-        self.button_layout = QHBoxLayout()
-        
-        # Load Directory Button
-        self.load_directory_button = QPushButton("Load Directory")
-        self.load_directory_button.clicked.connect(self.on_load_directory)
-        self.button_layout.addWidget(self.load_directory_button)
+        # Initialize the widget to display the current filename
+        self.filename_widget = FileNameWidget(self)
 
-        # Add Button Layout to Main Layout
-        self.main_layout.addLayout(self.button_layout)
+        # Initialize the QLabel to display status messages
+        self.status_label = QLabel(self)
+
+        # Load directory button
+        load_button = QPushButton("Load Directory", self)
+        load_button.clicked.connect(self.on_load_directory)
+
+        # Layout 
+        layout = QVBoxLayout()
+        layout.addWidget(self.filename_widget)
+        layout.addWidget(self.image_label)
+        layout.addWidget(load_button)
+
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+
+        self.grid_size = None
+
+        # Connect the mouse_position_changed signal to update the filename
+        self.image_label.mouse_position_changed.connect(self.filename_widget.update_filename)
 
     def on_load_directory(self):
-        # Open file dialog to select the directory containing TIFF files
-        directory = QFileDialog.getExistingDirectory(self, "Select TIFF Directory")
-        print(directory)
+        directory = QFileDialog.getExistingDirectory(self, "Select Directory")
         if directory:
+            self.grid_size = get_grid_size(directory)
             load_and_stitch_tiffs(directory, self.status_label, self.image_label)
+            self.image_label.set_grid_size(self.grid_size)
+            self.update()
 

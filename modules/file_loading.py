@@ -4,78 +4,110 @@ import tifffile as tif
 import numpy as np
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtCore import Qt
+import matplotlib.pyplot as plt
+import scipy.ndimage
+from skimage import exposure
 
 def postoindex(x, y, max_x, max_y):
     if y % 2 == 0:
-        return y * max_y + x
+        return y * (max_y + 1) + x
     else:
-        return (y // 2 + 1) * (max_x + max_y) - x - 1
+        return (y // 2 + 1) * (max_x + max_y + 2) - x - 1
 
 file_pattern = r"Pos(\d+)_(\d+)"
 def file_generator(base_dir):
+    files = []
     for filename in sorted(os.listdir(base_dir)):
         if filename.endswith('.ome.tif'):
             match = re.search(file_pattern, filename)
             if match:
                 x, y = int(match.group(1)), int(match.group(2))
-                yield (filename, x, y)
+                files.append((filename, x, y))
+    
+    print("Files to be processed:")
+    for f in files:
+        print(f)
+    
+    for file in files:
+        yield file
+
+def apply_clahe_rgb(image, clip_limit=0.03):
+    return np.stack([exposure.equalize_adapthist(image[:,:,i], clip_limit=clip_limit) for i in range(3)], axis=-1)
+
 
 def load_and_stitch_tiffs(directory, status_label, image_label):
     status_label.setText("Stitching...")
     status_label.repaint()
 
-    positions = [] 
-
     max_x, max_y = 0, 0
     for filename, x, y in file_generator(directory):
         max_x = max(max_x, x)
         max_y = max(max_y, y)
-        positions.append((x, y)) 
-    
-    sample_tiff = os.path.join(directory, sorted(os.listdir(directory))[4])
-    print(sample_tiff)
-    sample_img = tif.imread(sample_tiff) 
-    image_shape = sample_img.shape[1:] 
-    print(image_shape)
+    print(max_x, max_y)
 
-    stitched_blue_channel = np.zeros(((max_y + 1) * image_shape[1], (max_x + 1) * image_shape[2]), dtype=np.uint16)
-    stitched_green_channel = np.zeros_like(stitched_blue_channel)
-    stitched_red_channel = np.zeros_like(stitched_blue_channel)
-    
+    tif_path = os.path.join(directory, sorted(os.listdir(directory))[4])
+    print(tif_path)
+    tif_stack = tif.imread(tif_path) 
+    image_shape = tif_stack.shape
+    print(image_shape)
+    num_images, num_channels, image_height, image_width = tif_stack.shape
+
+    stack_bgr_images = tif_stack.transpose(0, 2, 3, 1)  # Shape: (400, 1200, 1200, 3)
+    print(f'Shape after transposition: {stack_bgr_images.shape}')
+
+    stitched_image = np.zeros(((max_y + 1) * image_height, (max_x + 1) * image_width, num_channels), dtype=stack_bgr_images.dtype)   
+
+    total_tiles = (max_x + 1) * (max_y + 1)
+    processed_tiles = 0 
+
     for filename, x, y in file_generator(directory):
-        file_path = os.path.join(directory, filename)
-        img = tif.imread(file_path)
         index = postoindex(x, y, max_x, max_y)
-        if img[index].ndim == 3 and img.shape[1:][0] == 3:
-            blue_channel = img[index][0]
-            green_channel = img[index][1]
-            red_channel = img[index][2]
-        else:
-            raise ValueError(f"Unexpected number of channels in {filename}")
-        
         stitched_y = max_y - y
         stitched_x = x
+        print(f"Placing {filename} at (x={stitched_x}, y={stitched_y}), index={index}")
+        if (stitched_y + 1) * image_height <= stitched_image.shape[0] and (stitched_x + 1) * image_width <= stitched_image.shape[1]:
+            stitched_image[
+                stitched_y * image_height:(stitched_y + 1) * image_height,
+                stitched_x * image_width:(stitched_x + 1) * image_width
+            ] = stack_bgr_images[index]
+        else:
+            print(f"Warning: Tile at ({x}, {y}) exceeds stitched image boundaries")
 
-        stitched_blue_channel[stitched_y * image_shape[1]:(stitched_y + 1) * image_shape[1],
-                            stitched_x * image_shape[2]:(stitched_x + 1) * image_shape[2]] = blue_channel
 
-        stitched_green_channel[stitched_y * image_shape[1]:(stitched_y + 1) * image_shape[1],
-                            stitched_x * image_shape[2]:(stitched_x + 1) * image_shape[2]] = green_channel
+        processed_tiles += 1
 
-        stitched_red_channel[stitched_y * image_shape[1]:(stitched_y + 1) * image_shape[1],
-                            stitched_x * image_shape[2]:(stitched_x + 1) * image_shape[2]] = red_channel
-            
+    print(f"Processed {processed_tiles} out of {total_tiles} expected tiles")
 
-    # Combine the channels into one image (RGB)
-    stitched_image = np.stack([stitched_red_channel, stitched_green_channel, stitched_blue_channel], axis=-1)
-
-    # Convert numpy array to QImage
-    height, width, _ = stitched_image.shape
-    qimage = QImage(stitched_image.data, width, height, 3 * width, QImage.Format.Format_RGB888)
+    resized_image = scipy.ndimage.zoom(stitched_image, (0.25, 0.25, 1), order=1)
+    print("finished resizing")
+    red_max = np.max(resized_image[:,:,0])
+    print("red done")
+    green_max = np.max(resized_image[:,:,1])
+    print("green done")
+    blue_max = np.max(resized_image[:,:,2])
+    print("blue done")
+    stacked_image = np.stack((resized_image[:,:,0] / red_max, resized_image[:,:,1] / green_max, resized_image[:,:,2] / blue_max), axis=-1)
+    print("done")
+    stacked_image = apply_clahe_rgb(stacked_image)
+    
+    plt.imshow(stacked_image)
+    plt.title("Stitched Image")
+    plt.axis('off')
+    plt.imsave("stitched_image.png", stacked_image)
 
     # Display the stitched image in the QLabel
-    pixmap = QPixmap.fromImage(qimage)
+    print("Reading...")
+    image = QImage("stitched_image.png")
+    print("Setting up Pixmap")
+    pixmap = QPixmap.fromImage(image)
     image_label.setPixmap(pixmap.scaled(image_label.size(), Qt.AspectRatioMode.KeepAspectRatio))
 
     # Clear the status label
     status_label.setText("")
+
+def get_grid_size(directory):
+    max_x, max_y = 0, 0
+    for _, x, y in file_generator(directory):
+        max_x = max(max_x, x)
+        max_y = max(max_y, y)
+    return (max_y + 1, max_x + 1)
