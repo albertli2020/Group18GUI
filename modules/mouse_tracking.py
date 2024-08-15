@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QLabel, QWidget, QVBoxLayout
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QRect
 from PyQt6.QtGui import QPainter, QPen
+import os
 
 class MouseTrackingLabel(QLabel):
     mouse_position_changed = pyqtSignal(str)
@@ -9,11 +10,24 @@ class MouseTrackingLabel(QLabel):
         super().__init__(parent)
         self.setMouseTracking(True)
         self.grid_size = None
-        self.file_pattern = "Pos{:d}_{:d}.ome.tif"
+        self.directory = None
+        self.file_pattern = "Pos{:03d}_{:03d}.ome.tif"
 
     def set_grid_size(self, grid_size):
         self.grid_size = grid_size
 
+    def get_grid_size(self):
+        return self.grid_size
+
+    def set_directory(self, directory):
+        self.directory = directory
+
+    def generate_filename(self, col, row):
+        base_name = os.listdir(self.directory)[0]
+        prefix = base_name.split("Pos")[0]
+        filename = f"{prefix}Pos{col:03d}_{row:03d}.ome.tif"
+        return filename
+    
     def mouseMoveEvent(self, event):
         if self.pixmap() and self.grid_size:
             pos = event.position()
@@ -34,7 +48,7 @@ class MouseTrackingLabel(QLabel):
                 row = int(y // cell_height)
 
                 if 0 <= col < cols and 0 <= row < rows:
-                    filename = self.file_pattern.format(col, rows - row - 1)
+                    filename = self.generate_filename(col, rows - row - 1)
                     self.mouse_position_changed.emit(filename)
             else:
                 self.mouse_position_changed.emit("")
@@ -47,10 +61,10 @@ class MouseTrackingLabel(QLabel):
             painter = QPainter(self)
             pen = QPen(Qt.GlobalColor.lightGray, 1, Qt.PenStyle.SolidLine)
             painter.setPen(pen)
-            
+
             pixmap_rect = self.get_pixmap_rect()
             painter.setClipRect(pixmap_rect)
-            
+
             rows, cols = self.grid_size
             width = self.pixmap().width()
             height = self.pixmap().height()
@@ -74,6 +88,7 @@ class MouseTrackingLabel(QLabel):
             y = (self.height() - pixmap_size.height()) // 2
             return QRect(x, y, pixmap_size.width(), pixmap_size.height())
         return QRect()
+
 
 class FileNameWidget(QWidget):
     def __init__(self, parent=None):
