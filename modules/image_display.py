@@ -39,7 +39,6 @@ class MatplotlibCanvas(FigureCanvas):
         self.setParent(parent)
 
 def display_image(filepath, layout, status_label, grid_size):
-    # Load the image
     img = tif.imread(filepath)
     match = re.search(file_pattern, filepath.split('/')[-1])
     max_x, max_y = grid_size
@@ -48,7 +47,6 @@ def display_image(filepath, layout, status_label, grid_size):
         x, y = int(match.group(1)), int(match.group(2))
         img_index = postoindex(x, y, max_x, max_y)
 
-    # Separate the channels
     print(img.shape)
     blue_channel = img[img_index][0, :, :]
     green_channel = img[img_index][1, :, :]
@@ -121,17 +119,14 @@ def display_image(filepath, layout, status_label, grid_size):
 def display_analysis_result(canvas, results):
     ax = canvas.fig.add_subplot(1, 2, 2)
     
-    # Create RGB image for overlay
     overlay = np.zeros((*results['masks'].shape, 3), dtype=float)
-    overlay[results['green_overlay'], 1] = 1  # Green channel
-    overlay[results['red_overlay'], 0] = 1    # Red channel
+    overlay[results['green_overlay'], 1] = 1  
+    overlay[results['red_overlay'], 0] = 1    
     
-    # Overlay masks on original image
     original_red = canvas.axs[1, 0].images[0].get_array()
     original_green = canvas.axs[0, 1].images[0].get_array()
     original_blue = canvas.axs[0, 0].images[0].get_array()
     
-    # Ensure we're only using the RGB channels
     if original_red.ndim == 3 and original_red.shape[2] == 4:
         original_red = original_red[..., :3]
     if original_green.ndim == 3 and original_green.shape[2] == 4:
@@ -139,14 +134,12 @@ def display_analysis_result(canvas, results):
     if original_blue.ndim == 3 and original_blue.shape[2] == 4:
         original_blue = original_blue[..., :3]
     
-    # Combine channels
     original = np.stack((
-        original_red[..., 0],  # Red channel
-        original_green[..., 1],  # Green channel
-        original_blue[..., 2]  # Blue channel
+        original_red[..., 0],
+        original_green[..., 1],  
+        original_blue[..., 2]  
     ), axis=-1)
     
-    # Normalize the original image
     original = original / np.max(original)
     
     combined = original * 0.7 + overlay * 0.3  # Adjust these values to change the overlay intensity
@@ -159,21 +152,3 @@ def display_analysis_result(canvas, results):
 
     canvas.fig.tight_layout()
     canvas.draw()
-
-'''
-def display_analysis_result(canvas, ax, labeled_mask, cell_count):
-    im = ax.imshow(labeled_mask, cmap='nipy_spectral')
-    ax.set_title(f"Labeled Mask (Total cells: {cell_count})")
-    ax.axis('off')
-
-    for region in regionprops(labeled_mask):
-        if region.area < 50:
-            continue
-        y, x = region.centroid
-        ax.text(x, y, str(region.label), fontsize=8, color='white', 
-                ha='center', va='center')
-
-    canvas.fig.tight_layout()
-    canvas.fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    canvas.draw()
-'''
