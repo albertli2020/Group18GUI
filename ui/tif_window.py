@@ -17,5 +17,18 @@ class TifWindow(QMainWindow):
         container.setLayout(self.layout)
         self.setCentralWidget(container)
 
+    def update_progress(self, result):
+        if 'progress' in result:
+            self.progress_bar.setValue(int(result['progress'] * 100))
+        else:
+            # Display the result
+            self.results_display.append(
+                f"Filename: {result['filename']}, "
+                f"Total: {result.get('total_cells', 'N/A')}, "
+                f"Green: {result.get('green_cells', 'N/A')}, "
+                f"Red: {result.get('red_cells', 'N/A')}"
+            )
+
+
     def load_tiff_file(self, tiff_file_path, grid_size):
         display_image(tiff_file_path, self.layout, self.status_label, grid_size)

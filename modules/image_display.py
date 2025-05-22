@@ -51,7 +51,16 @@ def display_image(filepath, layout, status_label, grid_size):
     blue_channel = img[img_index][0, :, :]
     green_channel = img[img_index][1, :, :]
     red_channel = img[img_index][2, :, :]
-    
+    '''
+    green_reduction_factor = 0.4
+    red_increase_factor = 1.2
+    blue_increase_factor = 1.2
+
+    green_channel = np.clip(green_channel * green_reduction_factor, 0, 255)
+    red_channel = np.clip(red_channel * red_increase_factor, 0, 255)
+    blue_channel = np.clip(blue_channel * blue_increase_factor, 0, 255)
+    '''
+        
     canvas = MatplotlibCanvas()
     
     # Display each channel
@@ -86,6 +95,7 @@ def display_image(filepath, layout, status_label, grid_size):
     canvas.axs[0, 0].axis('off')
 
     # Display the merged image
+
     merged_image = np.stack((red_channel / red_max, green_channel / green_max, blue_channel / blue_max), axis=-1)
     #merged_image = np.stack((red_channel, green_channel, blue_channel), axis=-1)
     canvas.axs[1, 1].imshow(merged_image)

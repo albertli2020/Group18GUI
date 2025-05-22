@@ -7,6 +7,7 @@ from PyQt6.QtCore import Qt
 import matplotlib.pyplot as plt
 import scipy.ndimage
 from skimage import exposure
+import cv2
 
 def postoindex(x, y, max_x, max_y):
     if y % 2 == 0:
@@ -32,7 +33,20 @@ def file_generator(base_dir):
         yield file
 
 def apply_clahe_rgb(image, clip_limit=0.03):
-    return np.stack([exposure.equalize_adapthist(image[:,:,i], clip_limit=clip_limit) for i in range(3)], axis=-1)
+    image = np.clip(image, 0, 1).astype(np.float32)
+    print(f"CLAHE input min: {image.min()}, max: {image.max()}")  
+    result = np.stack([exposure.equalize_adapthist(image[:,:,i], clip_limit=clip_limit) for i in range(3)], axis=-1)
+    print(f"CLAHE output min: {result.min()}, max: {result.max()}")
+    return result  
+
+def load_single_tiff(directory, status_label, image_label):
+    status_label.setText("Loading...")
+    status_label.repaint()
+
+    tif_stack = tif.imread(directory)
+    _, num_channels, image_height, image_width = tif_stack.shape
+    
+
 
 
 def load_and_stitch_tiffs(directory, status_label, image_label):
@@ -80,30 +94,59 @@ def load_and_stitch_tiffs(directory, status_label, image_label):
 
     resized_image = scipy.ndimage.zoom(stitched_image, (0.25, 0.25, 1), order=1)
     print("finished resizing")
-    red_max = np.max(resized_image[:,:,0])
-    print("red done")
-    green_max = np.max(resized_image[:,:,1])
-    print("green done")
-    blue_max = np.max(resized_image[:,:,2])
-    print("blue done")
-    stacked_image = np.stack((resized_image[:,:,0] / red_max, resized_image[:,:,1] / green_max, resized_image[:,:,2] / blue_max), axis=-1)
-    print("done")
-    stacked_image = apply_clahe_rgb(stacked_image)
-    
-    plt.imshow(stacked_image)
+
+    # Normalize the image to 0-1 range
+    resized_image = resized_image.astype(np.float32) / np.max(resized_image)
+    print(f"After normalization - min: {resized_image.min()}, max: {resized_image.max()}")  # Debug print
+
+    # Adjust color balance
+    red_channel = resized_image[:,:,0]
+    green_channel = resized_image[:,:,1]
+    blue_channel = resized_image[:,:,2]
+
+    # Reduce green intensity
+    green_reduction_factor = 0.4
+    green_channel = green_channel * green_reduction_factor
+
+    # Increase red and blue intensity
+    red_increase_factor = 2.5
+    blue_increase_factor = 6.0
+    red_channel = np.clip(red_channel * red_increase_factor, 0, 1)
+    blue_channel = np.clip(blue_channel * blue_increase_factor, 0, 1)
+
+    # Reassemble the image
+    adjusted_image = np.stack((red_channel, green_channel, blue_channel), axis=-1)
+    print(f"After color adjustment - min: {adjusted_image.min()}, max: {adjusted_image.max()}")  # Debug print
+
+    # Apply CLAHE for contrast enhancement
+    adjusted_image = apply_clahe_rgb(adjusted_image, clip_limit=0.03)
+
+    # Convert to 8-bit format
+    adjusted_image = (adjusted_image * 255).astype(np.uint8)
+
+    # Further brightness adjustment if needed
+    brightness_factor = 1.2
+    hsv = cv2.cvtColor(adjusted_image, cv2.COLOR_RGB2HSV)
+    h, s, v = cv2.split(hsv)
+    v = np.clip(v * brightness_factor, 0, 255).astype(np.uint8)
+    final_hsv = cv2.merge((h, s, v))
+    brightened_image = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2RGB)
+
+    plt.imshow(brightened_image)
     plt.title("Stitched Image")
     plt.axis('off')
-    plt.imsave("stitched_image.png", stacked_image)
+    plt.imsave("stitched_image.png", brightened_image)
 
-    # Display the stitched image in the QLabel
     print("Reading...")
     image = QImage("stitched_image.png")
     print("Setting up Pixmap")
     pixmap = QPixmap.fromImage(image)
     image_label.setPixmap(pixmap.scaled(image_label.size(), Qt.AspectRatioMode.KeepAspectRatio))
 
-    # Clear the status label
     status_label.setText("")
+
+
+
 
 def get_grid_size(directory):
     max_x, max_y = 0, 0
